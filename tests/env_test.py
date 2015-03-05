@@ -1,26 +1,15 @@
 import os
-from eventlet.support import six
+
+import tests
 from tests.patcher_test import ProcessBase
-from tests import skip_with_pyevent
 
 
-class Socket(ProcessBase):
-    def test_patched_thread(self):
-        new_mod = """from eventlet.green import socket
-socket.gethostbyname('localhost')
-socket.getaddrinfo('localhost', 80)
-"""
-        os.environ['EVENTLET_TPOOL_DNS'] = 'yes'
-        try:
-            self.write_to_tempfile("newmod", new_mod)
-            output, lines = self.launch_subprocess('newmod.py')
-            self.assertEqual(len(lines), 1, lines)
-        finally:
-            del os.environ['EVENTLET_TPOOL_DNS']
+def test_tpool_dns():
+    tests.run_isolated('env_tpool_dns.py')
 
 
 class Tpool(ProcessBase):
-    @skip_with_pyevent
+    @tests.skip_with_pyevent
     def test_tpool_size(self):
         expected = "40"
         normal = "20"

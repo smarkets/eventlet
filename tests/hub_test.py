@@ -1,15 +1,14 @@
 from __future__ import with_statement
 import sys
-
-import tests
-from tests import LimitedTestCase, main, skip_with_pyevent, skip_if_no_itimer, skip_unless
-from tests.patcher_test import ProcessBase
 import time
+
 import eventlet
 from eventlet import hubs
 from eventlet.event import Event
 from eventlet.semaphore import Semaphore
 from eventlet.support import greenlets, six
+import tests
+from tests import LimitedTestCase, skip_with_pyevent, skip_if_no_itimer, skip_unless
 
 
 DELAY = 0.001
@@ -206,6 +205,10 @@ class TestExceptionInGreenthread(LimitedTestCase):
             g.kill()
 
 
+class Foo(object):
+    pass
+
+
 class TestHubSelection(LimitedTestCase):
 
     def test_explicit_hub(self):
@@ -357,47 +360,5 @@ class TestDeadRunLoop(LimitedTestCase):
         assert g.dead  # sanity check that dummyproc has completed
 
 
-class Foo(object):
-    pass
-
-
-class TestDefaultHub(ProcessBase):
-
-    def test_kqueue_unsupported(self):
-        # https://github.com/eventlet/eventlet/issues/38
-        # get_hub on windows broken by kqueue
-        module_source = r'''
-from __future__ import print_function
-
-# Simulate absence of kqueue even on platforms that support it.
-import select
-try:
-    del select.kqueue
-except AttributeError:
-    pass
-
-from eventlet.support.six.moves import builtins
-
-original_import = builtins.__import__
-
-def fail_import(name, *args, **kwargs):
-    if 'epoll' in name:
-        raise ImportError('disabled for test')
-    if 'kqueue' in name:
-        print('kqueue tried')
-    return original_import(name, *args, **kwargs)
-
-builtins.__import__ = fail_import
-
-
-import eventlet.hubs
-eventlet.hubs.get_default_hub()
-print('ok')
-'''
-        self.write_to_tempfile('newmod', module_source)
-        output, _ = self.launch_subprocess('newmod.py')
-        self.assertEqual(output, 'kqueue tried\nok\n')
-
-
-if __name__ == '__main__':
-    main()
+def test_kqueue_unsupported():
+    tests.run_isolated('hub_kqueue_unsupported.py')

@@ -23,6 +23,9 @@ import eventlet
 from eventlet import tpool
 
 
+DEFAULT_TIMEOUT = 10
+
+
 # convenience for importers
 main = unittest.main
 
@@ -144,7 +147,7 @@ class LimitedTestCase(unittest.TestCase):
     timeout is 1 second, change it by setting TEST_TIMEOUT to the desired
     quantity."""
 
-    TEST_TIMEOUT = 1
+    TEST_TIMEOUT = DEFAULT_TIMEOUT
 
     def setUp(self):
         self.previous_alarm = None
@@ -205,6 +208,7 @@ def check_idle_cpu_usage(duration, allowed_part):
         raise SkipTest('CPU usage testing not supported (`import resource` failed)')
 
     r1 = resource.getrusage(resource.RUSAGE_SELF)
+    # Must use green sleep here
     eventlet.sleep(duration)
     r2 = resource.getrusage(resource.RUSAGE_SELF)
     utime = r2.ru_utime - r1.ru_utime
@@ -292,13 +296,30 @@ def get_database_auth():
     return retval
 
 
-def run_python(path):
+def thread_call_timeout(timeout, fun, *args, **kwargs):
+    # ok, fun result
+    state = [False, None]
+
+    def waiter_fun():
+        state[:] = (True, fun(*args, **kwargs))
+
+    threading_original = eventlet.patcher.original('threading')
+    waiter = threading_original.Thread(target=waiter_fun)
+    waiter.daemon = True
+    waiter.start()
+    waiter.join(timeout=timeout)
+    return state
+
+
+def run_python(path, env=None, timeout=DEFAULT_TIMEOUT):
     if not path.endswith('.py'):
         path += '.py'
     path = os.path.abspath(path)
     src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     new_env = os.environ.copy()
     new_env['PYTHONPATH'] = os.pathsep.join(sys.path + [src_dir])
+    if env:
+        new_env.update(env)
     p = subprocess.Popen(
         [sys.executable, path],
         env=new_env,
@@ -306,12 +327,21 @@ def run_python(path):
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
     )
-    output, _ = p.communicate()
-    return output
+    # Popen.communicate(timeout) is not available in CPython2.6
+    ok, result = thread_call_timeout(timeout, p.communicate, input=None)
+    if not ok:
+        try:
+            p.kill()
+        except subprocess.ProcessLookupError:
+            # process finished between timeout and kill -- count as timeout still
+            pass
+        assert False, 'run_python timeout={0} path="{1}"'.format(timeout, path)
+
+    return result[0]
 
 
-def run_isolated(path, prefix='tests/isolated/'):
-    output = run_python(prefix + path).rstrip()
+def run_isolated(path, prefix='tests/isolated/', env=None, timeout=DEFAULT_TIMEOUT):
+    output = run_python(path=prefix + path, timeout=timeout).rstrip()
     if output.startswith(b'skip'):
         parts = output.split(b':', 1)
         skip_args = []

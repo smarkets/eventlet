@@ -645,7 +645,7 @@ class Test02MysqlRaw(MysqlConnectionPool, RawConnectionPool, TestCase):
     __test__ = True
 
 
-def postgres_requirement(_f):
+def postgres_requirement(_f, debug=True):
     try:
         import psycopg2
         try:
@@ -653,10 +653,12 @@ def postgres_requirement(_f):
             psycopg2.connect(**auth)
             return True
         except psycopg2.OperationalError:
-            print("Skipping postgres tests, error when connecting")
+            if debug:
+                print("Skipping postgres tests, error when connecting")
             return False
     except ImportError:
-        print("Skipping postgres tests, psycopg2 not importable")
+        if debug:
+            print("Skipping postgres tests, psycopg2 not importable")
         return False
 
 
